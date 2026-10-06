@@ -38,9 +38,8 @@ pub fn load(path: &Path) -> ViewsConfig {
                         .into(),
                 );
             }
-            if !names.insert(view.name.to_lowercase())
-                || ["inbox", "later", "books"].contains(&view.name.to_lowercase().as_str())
-            {
+            let name = view.name.trim().to_lowercase();
+            if ["home", "inbox", "later", "books"].contains(&name.as_str()) || !names.insert(name) {
                 return Err(format!(
                     "View name '{}' is duplicated or reserved.",
                     view.name
@@ -92,6 +91,8 @@ mod tests {
         assert_eq!(valid.views[0].query, "in:later");
         for source in [
             r#"{"views":[{"name":"Inbox","query":"in:later"}]}"#,
+            r#"{"views":[{"name":"Home","query":"in:later"}]}"#,
+            r#"{"views":[{"name":" home ","query":"in:later"}]}"#,
             r#"{"views":[],"typo":true}"#,
             "invalid JSON",
         ] {

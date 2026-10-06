@@ -30,4 +30,4 @@ tag:"Urban design" AND (in:inbox OR in:later)
 
 Feed is excluded from the import. Saved Home layouts and queries cannot be imported through Reader's documented API. Copy queries into this file once; edit and reload whenever your preferred rules change.
 
-Limits: 30 custom views, names up to 80 characters, queries up to 2,048 characters and 20 nested groups, file up to 64 KB. Names must be unique and cannot reuse Inbox, Later or Books.
+Limits: 30 custom views, names up to 80 characters, queries up to 2,048 characters and 20 nested groups, file up to 64 KB. Names must be unique and cannot reuse Home, Inbox, Later or Books; leading and trailing spaces and case do not distinguish names.

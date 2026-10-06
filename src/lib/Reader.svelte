@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import ReadingControls from './ReadingControls.svelte';
+  import { readingStyle } from './typography';
+  import { fly, fade } from 'svelte/transition';
+  import { quartOut } from 'svelte/easing';
   import { sanitizeContent, selectionDetails, capturePosition, restorePosition, applyHighlights, clearHighlights } from './content';
   import type { SelectedText } from './content';
   import type { Highlight, Position, ReadingDocument, Settings } from './types';
@@ -26,13 +29,9 @@
   let disposed = false;
   const html = $derived(sanitizeContent(data.html, data.document.source_url, data.document.category === 'epub'));
   const percent = $derived(Math.round(Math.min(1, Math.max(0, data.document.reading_progress)) * 100));
-  const fonts = {
-    inter: "'Inter Variable', Inter, sans-serif",
-    georgia: 'Georgia, serif',
-    system: 'system-ui, sans-serif',
-  };
-  const readingFont = $derived(fonts[settings.font_family]);
-  const readingInk = $derived(`rgb(${settings.text_brightness}% ${settings.text_brightness}% ${settings.text_brightness}%)`);
+  function motionDuration(duration: number) {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : duration;
+  }
   const floatingLeft = $derived(selection ? Math.max(12, Math.min(window.innerWidth - 180, selection.rect.left)) : 0);
   const floatingTop = $derived(selection ? Math.max(76, Math.min(window.innerHeight - 80, selection.rect.bottom + 10)) : 0);
 
@@ -137,9 +136,9 @@
 </script>
 
 <svelte:window onscroll={schedulePosition} onpointerdown={closeOutsideTypography} onkeydown={(event) => { if (event.key === 'Escape' && typography) closeTypography(); }} onbeforeunload={() => { save().catch(() => undefined); }} />
-<div class="reader-screen" style:--reading-font-family={readingFont} style:--reading-font-size={`${settings.font_size}px`} style:--reading-font-weight={settings.font_weight} style:--reading-line-height={settings.line_height} style:--reading-paragraph-spacing={`${settings.paragraph_spacing}em`} style:--reading-ink={readingInk} style:--reading-width={`${settings.reading_width}px`}>
+<div class="reader-screen" style={readingStyle(settings)}>
   <header class="reader-toolbar"><button disabled={busy} onclick={() => leave(onback)}>← Library</button><div class="reader-actions"><button bind:this={textSettingsButton} aria-expanded={typography} aria-controls="reading-typography" onclick={toggleTypography}>Text settings</button><button disabled={busy} onclick={() => onexternal(data.document.url).catch(report)}>Open in Reader</button><button disabled={busy} onclick={() => leave(onarchive)}>Archive</button></div></header>
-  {#if typography}<section bind:this={typographyPanel} id="reading-typography" class="reading-controls" aria-label="Reading typography"><div class="reading-controls-heading"><strong>Reading typography</strong><button onclick={() => closeTypography()}>Close</button></div><ReadingControls {settings} {onsettings} /></section>{/if}
+  {#if typography}<section bind:this={typographyPanel} id="reading-typography" class="reading-controls" aria-label="Reading typography" in:fly={{ y: -12, duration: motionDuration(280), easing: quartOut }} out:fade={{ duration: motionDuration(160) }}><div class="reading-controls-heading"><strong>Reading typography</strong><button onclick={() => closeTypography()}>Close</button></div><ReadingControls {settings} {onsettings} /></section>{/if}
   <main class="reading-page">
     <header class="article-heading"><p class="eyebrow">{data.document.site_name ?? data.document.category}</p><h1>{data.document.title}</h1><p class="reading-byline">{data.document.author ?? ''}{#if data.document.published_date}<span>{new Date(data.document.published_date).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</span>{/if}</p>
       {#if percent > 0}<div class="remote-progress"><span>Reader progress: {percent}%</span><button onclick={approximateResume}>Resume approximately at {percent}%</button></div>{/if}

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { Bootstrap, Document } from '../src/lib/types';
+import type { Bootstrap, CustomView, Document } from '../src/lib/types';
 import examples from '../views.example.json' with { type: 'json' };
 
 function document(id: string, values: Partial<Document> = {}): Document {
@@ -25,9 +25,10 @@ const html = `<p id="opening">A street is best understood at walking pace. The o
   ${Array.from({ length: 45 }, (_, i) => `<p>Paragraph ${i + 1}. A reader should be able to return to the same place after changing views. Quiet interfaces leave space for the words and let the article set its own pace.</p>`).join('')}
   <p id="ending">The final paragraph.</p>`;
 
-async function installBridge(page: Page, options: { count?: number; connected?: boolean; hostile?: boolean; readDelay?: number; readFailure?: boolean; archiveFailure?: boolean } = {}) {
+async function installBridge(page: Page, options: { count?: number; connected?: boolean; hostile?: boolean; readDelay?: number; readFailure?: boolean; archiveFailure?: boolean; views?: CustomView[] } = {}) {
   await page.route('**/test-cover.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750"><rect width="1200" height="750" fill="#313d43"/><path d="M0 590L500 220L900 470L1200 150V750H0Z" fill="#b1b8b7"/><path d="M0 690L700 330L1200 600V750H0Z" fill="#667477"/></svg>' }));
   const initial = structuredClone(snapshot);
+  if (options.views) initial.views = options.views;
   if (options.connected === false) { initial.connected = false; initial.documents = []; }
   if (options.count) initial.documents = Array.from({ length: options.count }, (_, i) => document(`item-${i}`, { title: `Article ${String(i).padStart(4, '0')}` }));
   await page.addInitScript(({ initial, html, options }) => {
@@ -89,6 +90,20 @@ async function installBridge(page: Page, options: { count?: number; connected?: 
 
 test('zero-config browsing, copied views, metadata covers, search and list layout', async ({ page }) => {
   await installBridge(page); await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Quick Reads', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Long Reads', exact: true })).toBeVisible();
+  await expect(page.locator('.article-card')).toHaveCount(3);
+  await expect(page.getByRole('region', { name: 'Quick Reads' }).locator('.article-card')).toHaveCount(2);
+  await expect(page.getByRole('region', { name: 'Long Reads' }).locator('.article-card')).toHaveCount(1);
+  await page.getByRole('region', { name: 'Long Reads' }).getByRole('button', { name: /View all/ }).click();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toHaveCount(0);
+  await expect(page.locator('.article-card')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('searchbox').fill('walking');
+  await expect(page.locator('.article-card')).toHaveCount(1);
+  await page.getByRole('searchbox').fill('');
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
   await expect(page.locator('.article-card')).toHaveCount(4);
   await expect(page.locator('.article-cover img')).toHaveJSProperty('naturalWidth', 1200);
@@ -107,8 +122,27 @@ test('zero-config browsing, copied views, metadata covers, search and list layou
   await expect(page.locator('.article-list')).toBeVisible();
 });
 
+test('Home can be configured from an empty dashboard while Inbox remains available', async ({ page }) => {
+  await installBridge(page, { views: [] }); await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.locator('.article-card')).toHaveCount(0);
+  await page.getByRole('button', { name: /views file/i }).click();
+  expect(await page.evaluate(() => (window as any).testCalls.at(-1).command)).toBe('open_config');
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+  await expect(page.locator('.article-card')).toHaveCount(4);
+});
+
+test('Home isolates an invalid custom query without hiding valid views', async ({ page }) => {
+  await installBridge(page, { views: [{ name: 'Unsupported view', query: 'domain:example.com' }, { name: 'Readable view', query: 'in:inbox AND category:article' }] });
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Unsupported view' }).getByRole('alert')).toContainText('Unsupported');
+  await expect(page.getByRole('region', { name: 'Readable view' }).locator('.article-card')).toHaveCount(3);
+});
+
 test('large library renders one page and can reach subsequent pages', async ({ page }) => {
   await installBridge(page, { count: 1000 }); await page.goto('/');
+  await expect(page.locator('.article-card')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
   await expect(page.locator('.article-card')).toHaveCount(60);
   await expect(page.getByText('1000 items')).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
@@ -121,7 +155,17 @@ test('large library renders one page and can reach subsequent pages', async ({ p
 
 test('cover size changes the rendered grid and reading controls share saved preferences', async ({ page }) => {
   await installBridge(page); await page.goto('/');
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+  const coverControl = page.locator('.cover-size-control');
+  await page.mouse.move(0, 0);
+  await expect(coverControl.locator('output')).toHaveCSS('opacity', '0');
+  await coverControl.hover();
+  await expect(coverControl.locator('output')).toHaveCSS('opacity', '1');
+  await page.mouse.move(0, 0);
+  await page.getByRole('slider', { name: 'Cover size' }).focus();
+  await expect(coverControl.locator('output')).toHaveCSS('opacity', '1');
   await page.getByRole('slider', { name: 'Cover size' }).fill('180');
+  await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
   const small = await page.locator('.article-cover').first().boundingBox();
   await page.getByRole('slider', { name: 'Cover size' }).fill('480');
   await expect.poll(async () => (await page.locator('.article-cover').first().boundingBox())!.width).toBeGreaterThan(small!.width * 1.5);
@@ -140,10 +184,17 @@ test('cover size changes the rendered grid and reading controls share saved pref
   await expect(page.locator('.article-body')).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(page.locator('.article-body p').first()).toHaveCSS('margin-bottom', '18px');
   expect(await page.locator('.article-body').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Georgia');
+  const preview = page.getByRole('region', { name: 'Reading preview' });
+  await expect(preview.locator('.reading-sample')).toHaveCSS('font-weight', '700');
+  await expect(preview.locator('.reading-sample')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(preview.locator('.reading-sample p').first()).toHaveCSS('margin-bottom', '18px');
+  expect(await preview.locator('.reading-sample').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Georgia');
   await page.getByRole('button', { name: '← Library' }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Typeface' })).toHaveValue('georgia');
   await expect(page.getByRole('slider', { name: 'Text brightness' })).toHaveValue('100');
+  await page.getByRole('slider', { name: 'Text size' }).fill('28');
+  await expect(preview.locator('.reading-sample')).toHaveCSS('font-size', '28px');
   await page.evaluate(() => (window as any).testEmit('tauri://close-requested', null));
   await expect.poll(() => page.evaluate(() => (window as any).windowDestroyed)).toBe(true);
   const saved = await page.evaluate(() => (window as any).testCalls.filter((call: any) => call.command === 'save_settings').at(-1).args.settings);
@@ -153,7 +204,7 @@ test('cover size changes the rendered grid and reading controls share saved pref
 test('reduced motion disables screen and interaction animations', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installBridge(page); await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   const settingsButton = page.getByRole('button', { name: 'Settings', exact: true });
   const beforePress = (await settingsButton.boundingBox())!;
   await page.mouse.move(beforePress.x + beforePress.width / 2, beforePress.y + beforePress.height / 2);
@@ -171,6 +222,25 @@ test('reduced motion disables screen and interaction animations', async ({ page 
   expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0);
 });
 
+test('cover and window resizing ease cards into position and stop immediately for reduced motion', async ({ page }) => {
+  await installBridge(page, { count: 1000 }); await page.goto('/');
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+  await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
+  const movingCards = () => page.locator('.article-card').evaluateAll(cards => cards.filter(card => card.getAnimations().some(animation => animation.playState === 'running')).length);
+  await page.getByRole('slider', { name: 'Cover size' }).fill('480');
+  await expect.poll(movingCards, { timeout: 1000 }).toBeGreaterThan(0);
+  await expect.poll(movingCards).toBe(0);
+  const wide = (await page.locator('.article-cover').first().boundingBox())!.width;
+  await page.setViewportSize({ width: 720, height: 900 });
+  await expect.poll(movingCards, { timeout: 1000 }).toBeGreaterThan(0);
+  await expect.poll(movingCards).toBe(0);
+  expect((await page.locator('.article-cover').first().boundingBox())!.width).toBeGreaterThan(wide);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('slider', { name: 'Cover size' }).fill('180');
+  await expect(page.locator('.article-card')).toHaveCount(60);
+  expect(await movingCards()).toBe(0);
+});
+
 test('request waits remain visible outside a library sync', async ({ page }) => {
   await installBridge(page, { readDelay: 1500 }); await page.goto('/');
   await page.getByRole('button', { name: /Streets made for walking/ }).click();
@@ -182,7 +252,7 @@ test('unavailable article retains the library and offers its Reader link', async
   await installBridge(page, { readFailure: true }); await page.goto('/');
   await page.getByRole('button', { name: /Streets made for walking/ }).click();
   await expect(page.getByRole('alert')).toContainText('no readable HTML');
-  await expect(page.locator('.article-card')).toHaveCount(4);
+  await expect(page.locator('.article-card')).toHaveCount(3);
   await page.getByRole('button', { name: 'Open in Reader', exact: true }).click();
   expect(await page.evaluate(() => (window as any).testCalls.filter((call: any) => call.command === 'open_external').at(-1).args.url)).toBe('https://read.readwise.io/read/streets');
   await page.getByRole('button', { name: 'Dismiss error' }).click();
@@ -284,19 +354,35 @@ test('VC-QR-6: a pending old-account read cannot appear after disconnect', async
 });
 
 test('visual acceptance: black library and reading screens have no horizontal overflow', async ({ page }, testInfo) => {
-  await installBridge(page); await page.goto('/'); await page.getByRole('button', { name: 'Quick Reads', exact: true }).click();
+  const capture = async (name: string) => {
+    await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
+    await page.screenshot({ path: testInfo.outputPath(name), fullPage: false });
+  };
+  await installBridge(page); await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.mouse.move(0, 0);
+  await capture('home.png');
+  await page.locator('.cover-size-control').hover();
+  await capture('cover-control.png');
+  await page.getByRole('button', { name: 'Quick Reads', exact: true }).click();
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('library.png'), fullPage: false, animations: 'disabled' });
+  await capture('library.png');
   await page.getByRole('button', { name: /Streets made for walking/ }).click();
-  await page.screenshot({ path: testInfo.outputPath('reader.png'), fullPage: false, animations: 'disabled' });
+  await capture('reader.png');
   await page.getByRole('button', { name: 'Text settings' }).click();
-  await page.screenshot({ path: testInfo.outputPath('reading-controls.png'), fullPage: false, animations: 'disabled' });
+  await capture('reading-controls.png');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Text settings' })).toBeFocused();
   await page.getByRole('button', { name: '← Library' }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.screenshot({ path: testInfo.outputPath('settings.png'), fullPage: false, animations: 'disabled' });
+  await capture('settings.png');
   await page.setViewportSize({ width: 720, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Back to library' }).click();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('slider', { name: 'Cover size' }).fill('480');
+  await capture('home-narrow.png');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

@@ -1,6 +1,6 @@
 [package]
 name = "nano-reader"
-version = "0.2.0"
+version = "0.2.1"
 description = "A focused Windows reader for Readwise Reader"
 license = "MIT"
 edition = "2021"

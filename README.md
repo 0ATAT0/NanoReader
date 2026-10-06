@@ -12,11 +12,13 @@ Get your [Readwise access token](https://readwise.io/access_token) and enter it 
 
 Optional views live in `views.json` in the app's local data folder. **Settings → Open views file** opens it in Notepad. Copy named queries from your Reader views, save, then choose **Reload views**. See [views.example.json](views.example.json) and [supported queries](docs/views.md).
 
+Home groups your configured views into sections with six article previews each, capped at 60 cards across the dashboard. **View all** opens the complete view. Without custom views, Home offers setup and the built-in tabs remain available. Search and sorting apply to Home as well as individual views.
+
 Sync imports metadata first and fetches article bodies or books when opened. Reader limits LIST requests to 20 per minute, so a large first import takes time while completed pages remain browsable. **Refresh entire library** also reconciles deleted items and items moved back to Feed.
 
 ## Reading and API limits
 
-Reading controls adjust font, size, weight, line spacing, paragraph spacing, text brightness and width. The cover-size slider sits beside the library layout controls. Preferences persist between launches. Transitions respect the system's reduced-motion setting. On Windows 11, the native title bar is pure black; older Windows versions retain the system's dark title bar.
+Reading controls adjust font, size, weight, line spacing, paragraph spacing, text brightness and width, with a live text preview below the controls. The cover-size slider sits beside the library layout controls; its track and value appear on hover or keyboard focus. Cover cards ease into their new layout as the slider or window size changes. Preferences persist between launches. Transitions respect the system's reduced-motion setting. On Windows 11, the native title bar is pure black; older Windows versions retain the system's dark title bar.
 
 Article HTML is sanitized; scripts, embedded frames and publisher styles are removed. Ordinary links open your browser. Article and cover images contact their source hosts when displayed.
 

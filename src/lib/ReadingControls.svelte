@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Settings } from './types';
+  import { readingStyle } from './typography';
   let { settings, onsettings }: {
     settings: Settings;
     onsettings: (settings: Settings) => void;
@@ -44,3 +45,11 @@
     <input aria-label="Reading width" type="range" min="600" max="1400" step="20" value={settings.reading_width} oninput={(event) => change('reading_width', Number(event.currentTarget.value))} />
   </label>
 </div>
+
+<section class="reading-preview" aria-label="Reading preview" style={readingStyle(settings)}>
+  <p class="eyebrow">READING PREVIEW</p>
+  <div class="reading-sample">
+    <p>Some details only appear when we slow down: light moving across a wall, a familiar street seen from another angle, a sentence that stays with us.</p>
+    <p>A little room between paragraphs gives each thought its own place. Choose the type and spacing that make you want to keep reading.</p>
+  </div>
+</section>

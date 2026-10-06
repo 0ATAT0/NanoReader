@@ -23,7 +23,7 @@
   let syncing = $state(false);
   let opening = $state(false);
   let mutating = $state(false);
-  let libraryView = $state('inbox');
+  let libraryView = $state('home');
   let librarySearch = $state('');
   let libraryPage = $state(1);
   let status = $state('');
@@ -96,7 +96,7 @@
     ++generation; ++readGeneration;
     clearTimeout(settingsTimer); clearTimeout(progressTimer);
     connected = false; documents = []; reading = null; lastSynced = null;
-    libraryView = 'inbox'; librarySearch = ''; libraryPage = 1; mutating = false;
+    libraryView = 'home'; librarySearch = ''; libraryPage = 1; mutating = false;
     config = { views: [], config_path: '', config_error: null };
     token = ''; screen = 'library'; status = ''; error = null; failedDocumentUrl = null; syncing = false; opening = false; authenticating = false;
     try { await disconnect(); } catch (reason) { report(reason); }
