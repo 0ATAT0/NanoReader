@@ -25,6 +25,7 @@ struct AppState {
 }
 
 fn credential() -> Result<keyring::Entry, String> {
+    // Keep the original identity so upgrades retain the user's saved token and library.
     keyring::Entry::new("io.quietreader.desktop", "readwise-token")
         .map_err(|_| "Windows Credential Manager is unavailable.".into())
 }
@@ -404,12 +405,12 @@ pub fn run() {
                 sync_lock: tokio::sync::Mutex::new(()),
                 data_dir,
             });
-            tauri::WebviewWindowBuilder::new(
+            let window = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
-            .title("Quiet Reader")
+            .title("NanoReader")
             .inner_size(1280.0, 880.0)
             .min_inner_size(720.0, 540.0)
             .theme(Some(tauri::Theme::Dark))
@@ -424,6 +425,30 @@ pub fn run() {
             })
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .build()?;
+            #[cfg(windows)]
+            {
+                use windows_sys::Win32::Graphics::Dwm::{
+                    DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR,
+                    DWMWA_TEXT_COLOR,
+                };
+                let hwnd = window.hwnd()?.0;
+                for (attribute, color) in [
+                    (DWMWA_CAPTION_COLOR, 0_u32),
+                    (DWMWA_BORDER_COLOR, 0_u32),
+                    (DWMWA_TEXT_COLOR, 0x00f2f2f2_u32),
+                ] {
+                    // Windows 11 supports explicit caption colours; older systems keep the dark native theme.
+                    // SAFETY: the live window handle and COLORREF pointer are valid for this synchronous call.
+                    unsafe {
+                        DwmSetWindowAttribute(
+                            hwnd,
+                            attribute as u32,
+                            std::ptr::from_ref(&color).cast(),
+                            std::mem::size_of::<u32>() as u32,
+                        );
+                    }
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -441,7 +466,7 @@ pub fn run() {
             open_external
         ])
         .run(tauri::generate_context!())
-        .expect("Quiet Reader could not start");
+        .expect("NanoReader could not start");
 }
 
 #[cfg(test)]

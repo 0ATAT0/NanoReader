@@ -1,4 +1,4 @@
-# Working on Quiet Reader
+# Working on NanoReader
 
 Read README.md and the modules on the path you will change before editing.
 

@@ -1,14 +1,14 @@
-# Quiet Reader
+# NanoReader
 
 A small Windows desktop app for reading articles and EPUBs saved in Readwise Reader.
 
-Pure-black surfaces, cover and list browsing, adjustable typography, local reading positions, highlighting and archive. Built with Rust, Tauri and Svelte. Readwise remains your library; Quiet Reader has no server, analytics or AI service.
+Pure-black surfaces, cover and list browsing, adjustable typography, local reading positions, highlighting and archive. Built with Rust, Tauri and Svelte. Readwise remains your library; NanoReader has no server, analytics or AI service.
 
 ## Setup
 
 Run the Windows installer or standalone executable built below. WebView2 is required; the installer downloads it if missing.
 
-Get your [Readwise access token](https://readwise.io/access_token) and enter it in the app. Quiet Reader stores it in Windows Credential Manager. Inbox, Later and Books work immediately. Inbox is Reader's Inbox location; Reader's configurable Home dashboard is not imported.
+Get your [Readwise access token](https://readwise.io/access_token) and enter it in the app. NanoReader stores it in Windows Credential Manager. Inbox, Later and Books work immediately. Inbox is Reader's Inbox location; Reader's configurable Home dashboard is not imported.
 
 Optional views live in `views.json` in the app's local data folder. **Settings → Open views file** opens it in Notepad. Copy named queries from your Reader views, save, then choose **Reload views**. See [views.example.json](views.example.json) and [supported queries](docs/views.md).
 
@@ -16,13 +16,15 @@ Sync imports metadata first and fetches article bodies or books when opened. Rea
 
 ## Reading and API limits
 
+Reading controls adjust font, size, weight, line spacing, paragraph spacing, text brightness and width. The cover-size slider sits beside the library layout controls. Preferences persist between launches. Transitions respect the system's reduced-motion setting. On Windows 11, the native title bar is pure black; older Windows versions retain the system's dark title bar.
+
 Article HTML is sanitized; scripts, embedded frames and publisher styles are removed. Ordinary links open your browser. Article and cover images contact their source hosts when displayed.
 
 Desktop reading positions are local. Reader supplies a percentage for an explicitly approximate resume; its documented API has no progress-write endpoint or saved-view configuration endpoint. EPUB percentages approximate a chapter. Highlights are matched by text in Reader; repeated passages can resolve to a different occurrence there. Local highlights preserve the selected occurrence.
 
 EPUBs require a downloadable source from Reader. Encrypted, damaged or oversized books show an error; open these in Reader separately. PDF and video items can appear in the library; use Reader separately when readable HTML is unavailable. Readable items have an **Open in Reader** button. Offline operation is not guaranteed.
 
-The local data directory is `%LOCALAPPDATA%\io.quietreader.desktop`. SQLite holds metadata, settings, local positions and a bounded article cache; downloaded EPUBs have a separate bounded cache. Disconnect removes the token and cached account content while retaining typography settings. Treat the data folder as private.
+The local data directory is `%LOCALAPPDATA%\io.quietreader.desktop`. The original identifier is retained so upgrades from Quiet Reader keep the saved token, views and local reading positions. Each Windows account has its own directory; local files are excluded from Git. SQLite holds metadata, settings, local positions and a bounded article cache; downloaded EPUBs have a separate bounded cache. Disconnect removes the token and cached account content while retaining typography settings. Treat the data folder as private.
 
 This is an independent client, unaffiliated with Readwise. [Reader API documentation](https://readwise.io/reader_api).
 

@@ -52,7 +52,7 @@ for name, folder, repository in packages:
 if missing:
     raise SystemExit("No licence file found for: " + ", ".join(missing))
 
-sections = ["Quiet Reader dependency notices\n\nQuiet Reader is MIT licensed. "
+sections = ["NanoReader dependency notices\n\nNanoReader is MIT licensed. "
             "Its dependencies retain their own licences.\n"
             "This file includes locked Rust dependencies and shipped frontend dependencies.\n"]
 for group in groups.values():

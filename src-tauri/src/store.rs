@@ -23,9 +23,7 @@ impl Store {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(storage_error)?;
         if version > 1 {
-            return Err(
-                "The local library was created by a newer app. Update Quiet Reader.".into(),
-            );
+            return Err("The local library was created by a newer app. Update NanoReader.".into());
         }
         connection
             .execute_batch(
@@ -166,6 +164,14 @@ impl Store {
             let Some(parent) = api.parent_id.as_deref() else {
                 continue;
             };
+            let Some(text) = api
+                .content
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            else {
+                // Empty/image highlights have no passage to render; retain existing local text.
+                continue;
+            };
             let parent_exists: bool = transaction
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM documents WHERE id = ?1)",
@@ -178,7 +184,7 @@ impl Store {
             }
             let highlight = Highlight {
                 id: api.document.id.clone(),
-                text: api.document.title.clone(),
+                text: text.to_owned(),
                 offset: api.highlight_offset,
                 chapter: None,
             };
@@ -462,7 +468,7 @@ mod tests {
 
     fn highlight(id: &str, parent: &str) -> ApiDocument {
         serde_json::from_value(serde_json::json!({
-            "id": id, "title": "A highlighted passage", "category": "highlight",
+            "id": id, "title": "Metadata title", "location": "new", "content": "A highlighted passage", "category": "highlight",
             "parent_id": parent, "highlight_offset": 42, "notes": "A note"
         }))
         .unwrap()
@@ -485,6 +491,25 @@ mod tests {
         store.save_position("b", &position).unwrap();
         assert_eq!(store.library().unwrap().documents.len(), 2);
         assert_eq!(store.highlights("b").unwrap()[0].offset, Some(42));
+        assert_eq!(
+            store.highlights("b").unwrap()[0].text,
+            "A highlighted passage"
+        );
+
+        let mut empty = highlight("h", "b");
+        empty.content = Some(String::new());
+        let mut missing = highlight("no-passage", "b");
+        missing.content = None;
+        store
+            .apply_sync(
+                &[article("a"), article("b"), empty, missing],
+                FIRST_SYNC,
+                true,
+            )
+            .unwrap();
+        let retained = store.highlights("b").unwrap();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].text, "A highlighted passage");
 
         let mut repaired = article("b");
         repaired.document.updated_at = LATER_SYNC.into();
@@ -562,10 +587,29 @@ mod tests {
     fn settings_and_positions_survive_restart_and_account_clear_isolates_library_data() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("library.sqlite");
+        {
+            let store = Store::open(&path).unwrap();
+            // This is the persisted v0.1 format, before the additional reading controls existed.
+            store.connection.execute(
+                "INSERT INTO preferences(key, value) VALUES ('settings', ?1)",
+                [r#"{"font_size":26,"line_height":1.6,"reading_width":1100,"view":"list","sort":"oldest"}"#],
+            ).unwrap();
+            let upgraded = store.settings().unwrap();
+            assert_eq!(upgraded.font_size, 26);
+            assert_eq!(upgraded.reading_width, 1100);
+            assert_eq!(upgraded.font_family, "inter");
+            assert_eq!(upgraded.cover_size, 280);
+            assert_eq!(upgraded.text_brightness, 83);
+        }
         let settings = Settings {
             font_size: 24,
             line_height: 1.6,
             reading_width: 1200,
+            font_family: "georgia".into(),
+            font_weight: 500,
+            paragraph_spacing: 1.2,
+            text_brightness: 90,
+            cover_size: 420,
             view: "list".into(),
             sort: "oldest".into(),
         };
@@ -594,9 +638,39 @@ mod tests {
                 ..settings.clone()
             };
             assert!(store.save_settings(&invalid).is_err());
+            for invalid in [
+                Settings {
+                    font_family: "untrusted-font".into(),
+                    ..settings.clone()
+                },
+                Settings {
+                    font_weight: 900,
+                    ..settings.clone()
+                },
+                Settings {
+                    paragraph_spacing: f64::NAN,
+                    ..settings.clone()
+                },
+                Settings {
+                    text_brightness: 20,
+                    ..settings.clone()
+                },
+                Settings {
+                    cover_size: 100,
+                    ..settings.clone()
+                },
+            ] {
+                assert!(store.save_settings(&invalid).is_err());
+            }
         }
         let mut store = Store::open(&path).unwrap();
         assert_eq!(store.settings().unwrap().font_size, 24);
+        let restored = store.settings().unwrap();
+        assert_eq!(restored.font_family, "georgia");
+        assert_eq!(restored.font_weight, 500);
+        assert_eq!(restored.paragraph_spacing, 1.2);
+        assert_eq!(restored.text_brightness, 90);
+        assert_eq!(restored.cover_size, 420);
         assert_eq!(store.position("private-a").unwrap().unwrap().chapter, 3);
         assert_eq!(
             store.position("private-a").unwrap().unwrap().anchor,

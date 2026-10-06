@@ -39,7 +39,7 @@ impl ReaderApi {
         headers.insert(header::AUTHORIZATION, authorization);
         let client = Client::builder()
             .default_headers(headers)
-            .user_agent(concat!("QuietReader/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("NanoReader/", env!("CARGO_PKG_VERSION")))
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(40))
@@ -110,7 +110,7 @@ impl ReaderApi {
                     .json(&serde_json::json!({
                         "parent_id": parent_id,
                         "content": text,
-                        "saved_using": "Quiet Reader"
+                        "saved_using": "NanoReader"
                     })),
                 false,
             )
@@ -254,8 +254,12 @@ async fn decode<T: serde::de::DeserializeOwned>(mut response: Response) -> Resul
         }
         bytes.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&bytes).map_err(|_| {
-        "Readwise returned an unexpected response format. Update the app or try again later.".into()
+    serde_json::from_slice(&bytes).map_err(|error| {
+        // The full serde error can contain private response values.
+        format!(
+            "Readwise returned an unexpected response format ({:?}, line {}, column {}). Update the app or try again later.",
+            error.classify(), error.line(), error.column()
+        )
     })
 }
 
@@ -273,8 +277,9 @@ mod tests {
                      "author":null,"source_url":null,"image_url":null,"word_count":null,
                      "reading_time":null,"reading_progress":null,"tags":null,"parent_id":null,
                      "html_content":null,"raw_source_url":null,"highlight_offset":null,"notes":null},
-                    {"id":"highlight-a","title":"Selected passage","category":"highlight",
-                     "parent_id":"article-a","highlight_offset":25,"notes":"A note"}
+                    {"id":"highlight-a","title":null,"location":null,"category":"highlight",
+                     "content":"A precise imported passage", "parent_id":"article-a",
+                     "highlight_offset":25,"notes":"A note"}
                 ]
             }"#,
         ).unwrap();
@@ -286,6 +291,8 @@ mod tests {
         assert_eq!(page.results[1].parent_id.as_deref(), Some("article-a"));
         assert_eq!(page.results[1].highlight_offset, Some(25));
         assert_eq!(page.results[1].notes.as_deref(), Some("A note"));
+        assert!(page.results[1].document.title.is_empty());
+        assert!(page.results[1].document.location.is_empty());
 
         let last: Page =
             serde_json::from_str(r#"{"count":null,"nextPageCursor":null,"results":[]}"#).unwrap();
@@ -293,7 +300,22 @@ mod tests {
         assert!(last.results.is_empty());
         assert!(serde_json::from_str::<Page>(r#"{"results":[]}"#).is_err());
         assert!(serde_json::from_str::<Page>(r#"{"nextPageCursor":null}"#).is_err());
-        assert!(serde_json::from_str::<Page>(r#"{"results":[{"title":"missing id"}]}"#).is_err());
+        assert!(serde_json::from_str::<Page>(
+            r#"{"nextPageCursor":null,"results":[{"title":"missing id"}]}"#
+        )
+        .is_err());
+        for field in ["title", "location"] {
+            for value in [
+                serde_json::json!(7),
+                serde_json::json!({"unexpected":"object"}),
+            ] {
+                let wrong_type = serde_json::json!({
+                    "nextPageCursor": null,
+                    "results": [{"id":"invalid-metadata", field: value}]
+                });
+                assert!(serde_json::from_value::<Page>(wrong_type).is_err());
+            }
+        }
     }
 
     #[test]
@@ -333,7 +355,7 @@ mod tests {
             let mut limited = false;
             let mut rate_start = None;
             let mut arrivals = Vec::new();
-            for _ in 0..4 {
+            for _ in 0..5 {
                 let mut socket = loop {
                     match listener.accept() {
                         Ok((socket, _)) => break socket,
@@ -378,6 +400,12 @@ mod tests {
                 assert_eq!(authorization, Some("Token fixture-token"));
                 let response = if path == "/redirect" {
                     format!("HTTP/1.1 302 Found\r\nLocation: http://{address}/must-not-follow\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                } else if path == "/malformed" {
+                    let body = r#"{"nextPageCursor":null,"results":[{"id":"a","reading_progress":"PRIVATE-FIXTURE-PASSAGE"}]}"#;
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
                 } else if path == "/limited" && !limited {
                     limited = true;
                     first_tx.send(()).unwrap();
@@ -415,6 +443,13 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(redirect.status(), StatusCode::FOUND);
+            let malformed = api
+                .send(api.client.get(format!("http://{address}/malformed")), false)
+                .await
+                .unwrap();
+            let error = decode::<Page>(malformed).await.unwrap_err();
+            assert!(error.contains("Data, line 1, column "));
+            assert!(!error.contains("PRIVATE-FIXTURE-PASSAGE"));
             let limited = tokio::spawn({
                 let api = api.clone();
                 async move {

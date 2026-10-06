@@ -19,9 +19,14 @@ export interface Document {
 }
 
 export interface Settings {
+  font_family: 'inter' | 'georgia' | 'system';
   font_size: number;
+  font_weight: number;
   line_height: number;
+  paragraph_spacing: number;
+  text_brightness: number;
   reading_width: number;
+  cover_size: number;
   view: 'covers' | 'list';
   sort: 'newest' | 'oldest' | 'shortest';
 }

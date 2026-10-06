@@ -8,7 +8,7 @@ pub struct Document {
     pub url: String,
     #[serde(default)]
     pub source_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_string")]
     pub title: String,
     #[serde(default)]
     pub author: Option<String>,
@@ -16,7 +16,7 @@ pub struct Document {
     pub site_name: Option<String>,
     #[serde(default)]
     pub category: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_string")]
     pub location: String,
     #[serde(default)]
     pub image_url: Option<String>,
@@ -36,6 +36,11 @@ pub struct Document {
     pub summary: Option<String>,
     #[serde(default, deserialize_with = "nullable_tags")]
     pub tags: HashMap<String, serde_json::Value>,
+}
+
+// Reader's highlight documents have no title or library location.
+fn nullable_string<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 fn nullable_progress<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
@@ -60,6 +65,8 @@ pub struct ApiDocument {
     #[serde(default)]
     pub parent_id: Option<String>,
     #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
     pub html_content: Option<String>,
     #[serde(default)]
     pub raw_source_url: Option<String>,
@@ -70,10 +77,16 @@ pub struct ApiDocument {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Settings {
     pub font_size: u32,
     pub line_height: f64,
     pub reading_width: u32,
+    pub font_family: String,
+    pub font_weight: u32,
+    pub paragraph_spacing: f64,
+    pub text_brightness: u32,
+    pub cover_size: u32,
     pub view: String,
     pub sort: String,
 }
@@ -84,6 +97,11 @@ impl Default for Settings {
             font_size: 20,
             line_height: 1.8,
             reading_width: 900,
+            font_family: "inter".into(),
+            font_weight: 400,
+            paragraph_spacing: 1.5,
+            text_brightness: 83,
+            cover_size: 280,
             view: "covers".into(),
             sort: "newest".into(),
         }
@@ -95,6 +113,11 @@ impl Settings {
         if !(16..=32).contains(&self.font_size)
             || !(1.4..=2.2).contains(&self.line_height)
             || !(600..=1400).contains(&self.reading_width)
+            || !["inter", "georgia", "system"].contains(&self.font_family.as_str())
+            || !(300..=700).contains(&self.font_weight)
+            || !(0.5..=2.5).contains(&self.paragraph_spacing)
+            || !(60..=100).contains(&self.text_brightness)
+            || !(180..=480).contains(&self.cover_size)
             || !["covers", "list"].contains(&self.view.as_str())
             || !["newest", "oldest", "shortest"].contains(&self.sort.as_str())
         {

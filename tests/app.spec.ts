@@ -15,8 +15,9 @@ const documents = [document('streets', { title: 'Streets made for walking', imag
   document('book', { title: 'A Small Book of Observation', category: 'epub', reading_time: '240 mins', reading_progress: 0.8 }),
   document('tagged', { title: 'A tagged essay', tags: { keep: 'Keep' } })];
 
-const snapshot: Bootstrap = { connected: true, documents, settings: { font_size: 20, line_height: 1.8, reading_width: 900, view: 'covers', sort: 'newest' },
-  views: examples.views, config_path: 'C:\\LocalAppData\\QuietReader\\views.json', config_error: null, last_synced: '2026-01-01T00:00:00Z' };
+const snapshot: Bootstrap = { connected: true, documents, settings: { font_size: 20, line_height: 1.8, reading_width: 900,
+  font_family: 'inter', font_weight: 400, paragraph_spacing: 1.5, text_brightness: 83, cover_size: 280, view: 'covers', sort: 'newest' },
+  views: examples.views, config_path: 'C:\\LocalAppData\\io.quietreader.desktop\\views.json', config_error: null, last_synced: '2026-01-01T00:00:00Z' };
 
 const html = `<p id="opening">A street is best understood at walking pace. The ordinary details become visible when we slow down.</p>
   <p>Repeated passage. The middle of the article. Repeated passage.</p>
@@ -24,7 +25,7 @@ const html = `<p id="opening">A street is best understood at walking pace. The o
   ${Array.from({ length: 45 }, (_, i) => `<p>Paragraph ${i + 1}. A reader should be able to return to the same place after changing views. Quiet interfaces leave space for the words and let the article set its own pace.</p>`).join('')}
   <p id="ending">The final paragraph.</p>`;
 
-async function installBridge(page: Page, options: { count?: number; connected?: boolean; hostile?: boolean; readDelay?: number; archiveFailure?: boolean } = {}) {
+async function installBridge(page: Page, options: { count?: number; connected?: boolean; hostile?: boolean; readDelay?: number; readFailure?: boolean; archiveFailure?: boolean } = {}) {
   await page.route('**/test-cover.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750"><rect width="1200" height="750" fill="#313d43"/><path d="M0 590L500 220L900 470L1200 150V750H0Z" fill="#b1b8b7"/><path d="M0 690L700 330L1200 600V750H0Z" fill="#667477"/></svg>' }));
   const initial = structuredClone(snapshot);
   if (options.connected === false) { initial.connected = false; initial.documents = []; }
@@ -61,6 +62,7 @@ async function installBridge(page: Page, options: { count?: number; connected?: 
           case 'open_config': case 'open_external': return;
           case 'read_document': {
             if (options.readDelay) await new Promise(resolve => setTimeout(resolve, options.readDelay));
+            if (options.readFailure) throw 'Reader has no readable HTML for this item yet.';
             if (win.chapterFailure && args.chapter === 1) throw 'The requested chapter could not be read.';
             const doc = library.documents.find((document: any) => document.id === args.id);
             const chapter = args.chapter ?? (positions[args.id] as any)?.chapter ?? 0;
@@ -117,11 +119,74 @@ test('large library renders one page and can reach subsequent pages', async ({ p
   await expect(page.getByText('Page 2 of 17')).toBeVisible();
 });
 
+test('cover size changes the rendered grid and reading controls share saved preferences', async ({ page }) => {
+  await installBridge(page); await page.goto('/');
+  await page.getByRole('slider', { name: 'Cover size' }).fill('180');
+  const small = await page.locator('.article-cover').first().boundingBox();
+  await page.getByRole('slider', { name: 'Cover size' }).fill('480');
+  await expect.poll(async () => (await page.locator('.article-cover').first().boundingBox())!.width).toBeGreaterThan(small!.width * 1.5);
+  await expect(page.locator('.article-card')).toHaveCount(4);
+  await page.getByRole('button', { name: 'List', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'Cover size' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Covers', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'Cover size' })).toHaveValue('480');
+  await page.getByRole('button', { name: /Streets made for walking/ }).click();
+  await page.getByRole('button', { name: 'Text settings' }).click();
+  await page.getByRole('combobox', { name: 'Typeface' }).selectOption('georgia');
+  await page.getByRole('slider', { name: 'Text weight' }).fill('700');
+  await page.getByRole('slider', { name: 'Paragraph spacing' }).fill('0.9');
+  await page.getByRole('slider', { name: 'Text brightness' }).fill('100');
+  await expect(page.locator('.article-body')).toHaveCSS('font-weight', '700');
+  await expect(page.locator('.article-body')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(page.locator('.article-body p').first()).toHaveCSS('margin-bottom', '18px');
+  expect(await page.locator('.article-body').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Georgia');
+  await page.getByRole('button', { name: '← Library' }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Typeface' })).toHaveValue('georgia');
+  await expect(page.getByRole('slider', { name: 'Text brightness' })).toHaveValue('100');
+  await page.evaluate(() => (window as any).testEmit('tauri://close-requested', null));
+  await expect.poll(() => page.evaluate(() => (window as any).windowDestroyed)).toBe(true);
+  const saved = await page.evaluate(() => (window as any).testCalls.filter((call: any) => call.command === 'save_settings').at(-1).args.settings);
+  expect(saved).toMatchObject({ cover_size: 480, font_family: 'georgia', font_weight: 700, paragraph_spacing: 0.9, text_brightness: 100 });
+});
+
+test('reduced motion disables screen and interaction animations', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installBridge(page); await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
+  const settingsButton = page.getByRole('button', { name: 'Settings', exact: true });
+  const beforePress = (await settingsButton.boundingBox())!;
+  await page.mouse.move(beforePress.x + beforePress.width / 2, beforePress.y + beforePress.height / 2);
+  await page.mouse.down();
+  expect((await settingsButton.boundingBox())!.y).toBe(beforePress.y);
+  await page.mouse.up();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0);
+  await page.getByRole('button', { name: 'Back to library' }).click();
+  await page.locator('.article-card').first().hover();
+  expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0);
+  await page.locator('.article-card').first().click();
+  await page.getByRole('button', { name: 'Text settings' }).click();
+  await expect(page.getByRole('combobox', { name: 'Typeface' })).toBeVisible();
+  expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0);
+});
+
 test('request waits remain visible outside a library sync', async ({ page }) => {
   await installBridge(page, { readDelay: 1500 }); await page.goto('/');
   await page.getByRole('button', { name: /Streets made for walking/ }).click();
   await page.evaluate(() => (window as any).testEmit('sync-progress', { message: 'Reader request limit reached; retrying in 17 seconds…', completed: 0 }));
-  await expect(page.getByRole('status')).toContainText('retrying in 17 seconds');
+  await expect(page.getByRole('status', { name: 'Library status' })).toContainText('retrying in 17 seconds');
+});
+
+test('unavailable article retains the library and offers its Reader link', async ({ page }) => {
+  await installBridge(page, { readFailure: true }); await page.goto('/');
+  await page.getByRole('button', { name: /Streets made for walking/ }).click();
+  await expect(page.getByRole('alert')).toContainText('no readable HTML');
+  await expect(page.locator('.article-card')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Open in Reader', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).testCalls.filter((call: any) => call.command === 'open_external').at(-1).args.url)).toBe('https://read.readwise.io/read/streets');
+  await page.getByRole('button', { name: 'Dismiss error' }).click();
+  await expect(page.getByRole('button', { name: 'Open in Reader', exact: true })).toHaveCount(0);
 });
 
 test('VC-QR-4: hostile content is inert and article links open through the native boundary', async ({ page }) => {
@@ -222,9 +287,16 @@ test('visual acceptance: black library and reading screens have no horizontal ov
   await installBridge(page); await page.goto('/'); await page.getByRole('button', { name: 'Quick Reads', exact: true }).click();
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('library.png'), fullPage: false });
+  await page.screenshot({ path: testInfo.outputPath('library.png'), fullPage: false, animations: 'disabled' });
   await page.getByRole('button', { name: /Streets made for walking/ }).click();
-  await page.screenshot({ path: testInfo.outputPath('reader.png'), fullPage: false });
+  await page.screenshot({ path: testInfo.outputPath('reader.png'), fullPage: false, animations: 'disabled' });
+  await page.getByRole('button', { name: 'Text settings' }).click();
+  await page.screenshot({ path: testInfo.outputPath('reading-controls.png'), fullPage: false, animations: 'disabled' });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Text settings' })).toBeFocused();
+  await page.getByRole('button', { name: '← Library' }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath('settings.png'), fullPage: false, animations: 'disabled' });
   await page.setViewportSize({ width: 720, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

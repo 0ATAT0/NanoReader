@@ -1,6 +1,6 @@
-Quiet Reader dependency notices
+NanoReader dependency notices
 
-Quiet Reader is MIT licensed. Its dependencies retain their own licences.
+NanoReader is MIT licensed. Its dependencies retain their own licences.
 This file includes locked Rust dependencies and shipped frontend dependencies.
 
 ========================================================================

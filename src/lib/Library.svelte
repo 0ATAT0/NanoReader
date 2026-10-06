@@ -37,7 +37,7 @@
   }
 </script>
 
-<main class="library-screen">
+<main class="library-screen" style:--cover-size={`${settings.cover_size}px`}>
   <div class="library-heading"><div><p class="eyebrow">YOUR LIBRARY</p><h1>{title}</h1></div><span class="library-count">{filtered.documents.length} {filtered.documents.length === 1 ? 'item' : 'items'}</span></div>
   <nav class="view-tabs" aria-label="Library views">
     {#each tabs as tab (tab.key)}
@@ -48,7 +48,10 @@
     <label class="search-field"><span class="sr-only">Search title, author or source</span><input type="search" placeholder="Search your library" bind:value={search} oninput={() => page = 1} /></label>
     <label class="sort-field"><span class="sr-only">Sort articles</span><select value={settings.sort} onchange={(event) => { onsettings({ ...settings, sort: event.currentTarget.value as Settings['sort'] }); page = 1; }}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="shortest">Shortest first</option></select></label>
     <div class="layout-toggle" aria-label="Library layout"><button aria-pressed={settings.view === 'covers'} onclick={() => onsettings({ ...settings, view: 'covers' })}>Covers</button><button aria-pressed={settings.view === 'list'} onclick={() => onsettings({ ...settings, view: 'list' })}>List</button></div>
+    {#if settings.view === 'covers'}<label class="cover-size-control"><span>Cover size</span><input aria-label="Cover size" type="range" min="180" max="480" step="20" value={settings.cover_size} oninput={(event) => onsettings({ ...settings, cover_size: Number(event.currentTarget.value) })} /><output>{settings.cover_size}px</output></label>{/if}
   </div>
+  {#key `${selected}:${settings.view}:${currentPage}`}
+  <div class="library-results">
   {#if filtered.error}
     <div class="notice error" role="alert"><p>This view could not be read: {filtered.error}</p><button onclick={onconfig}>Edit views file</button></div>
   {:else if visible.length === 0}
@@ -71,4 +74,6 @@
     </div>
     {#if pageCount > 1}<nav class="pagination" aria-label="Library pages"><button disabled={currentPage === 1} onclick={() => { page = currentPage - 1; window.scrollTo(0, 0); }}>Previous</button><span>Page {currentPage} of {pageCount}</span><button disabled={currentPage === pageCount} onclick={() => { page = currentPage + 1; window.scrollTo(0, 0); }}>Next</button></nav>{/if}
   {/if}
+  </div>
+  {/key}
 </main>

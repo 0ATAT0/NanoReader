@@ -12,7 +12,7 @@
   let connected = $state(false);
   let ready = $state(false);
   let documents = $state<Document[]>([]);
-  let settings = $state<Settings>({ font_size: 20, line_height: 1.7, reading_width: 900, view: 'covers', sort: 'newest' });
+  let settings = $state<Settings>({ font_family: 'inter', font_size: 20, font_weight: 400, line_height: 1.8, paragraph_spacing: 1.5, text_brightness: 83, reading_width: 900, cover_size: 280, view: 'covers', sort: 'newest' });
   let config = $state<ViewsConfig>({ views: [], config_path: '', config_error: null });
   let lastSynced = $state<string | null>(null);
   let reading = $state<ReadingDocument | null>(null);
@@ -28,6 +28,7 @@
   let libraryPage = $state(1);
   let status = $state('');
   let error = $state<string | null>(null);
+  let failedDocumentUrl = $state<string | null>(null);
   let generation = $state(0);
   let readGeneration = 0;
   let libraryRevision = 0;
@@ -39,7 +40,14 @@
   let settingsWrite = Promise.resolve();
   let mounted = true;
 
-  function report(reason: unknown) { if (mounted) error = String(reason); }
+  function report(reason: unknown) { if (mounted) { error = String(reason); failedDocumentUrl = null; } }
+  function readerUrl(id: string): string | null {
+    try {
+      const url = new URL(documents.find(document => document.id === id)?.url ?? '');
+      return url.protocol === 'https:' && ['read.readwise.io', 'readwise.io'].includes(url.hostname)
+        && !url.username && !url.password && !url.port ? url.href : null;
+    } catch { return null; }
+  }
   function applySnapshot(snapshot: Bootstrap) {
     connected = snapshot.connected; documents = snapshot.documents; settings = snapshot.settings;
     config = { views: snapshot.views, config_path: snapshot.config_path, config_error: snapshot.config_error };
@@ -76,7 +84,7 @@
     if (!token.trim() || authenticating) return;
     const supplied = token.trim(); token = '';
     const account = ++generation;
-    authenticating = true; error = null;
+    authenticating = true; error = null; failedDocumentUrl = null;
     try {
       const snapshot = await connect(supplied);
       if (account !== generation || !mounted) return;
@@ -90,12 +98,12 @@
     connected = false; documents = []; reading = null; lastSynced = null;
     libraryView = 'inbox'; librarySearch = ''; libraryPage = 1; mutating = false;
     config = { views: [], config_path: '', config_error: null };
-    token = ''; screen = 'library'; status = ''; error = null; syncing = false; opening = false; authenticating = false;
+    token = ''; screen = 'library'; status = ''; error = null; failedDocumentUrl = null; syncing = false; opening = false; authenticating = false;
     try { await disconnect(); } catch (reason) { report(reason); }
   }
   async function open(id: string, chapter: number | null = null, target: string | null = null) {
     const account = generation; const request = ++readGeneration;
-    opening = true; error = null; status = 'Opening article…';
+    opening = true; error = null; failedDocumentUrl = null; status = 'Opening article…';
     try {
       const result = await readDocument(id, chapter);
       if (account === generation && request === readGeneration && connected && mounted) { reading = result; readingTarget = target; }
@@ -103,11 +111,12 @@
       if (account === generation && request === readGeneration) {
         if (reading) throw reason;
         report(reason);
+        failedDocumentUrl = readerUrl(id);
       }
     }
     finally { if (account === generation && request === readGeneration) opening = false; }
   }
-  function back() { ++readGeneration; reading = null; window.scrollTo(0, 0); }
+  function back() { ++readGeneration; reading = null; failedDocumentUrl = null; window.scrollTo(0, 0); }
   async function archive(id: string, account: number) {
     if (account !== generation) throw new Error('This account was disconnected.');
     mutating = true; status = 'Archiving…';
@@ -177,8 +186,8 @@
   onDestroy(() => { mounted = false; ++generation; clearTimeout(settingsTimer); clearTimeout(progressTimer); stopProgress?.(); stopClose?.(); });
 </script>
 
-<svelte:head><title>Quiet Reader</title><meta name="color-scheme" content="dark" /></svelte:head>
-{#if error}<div class="app-notice notice error" role="alert">{error}<button aria-label="Dismiss error" onclick={() => error = null}>Dismiss</button></div>{/if}
+<svelte:head><title>NanoReader</title><meta name="color-scheme" content="dark" /></svelte:head>
+{#if error}<div class="app-notice notice error" role="alert"><span>{error}</span><div class="notice-actions">{#if failedDocumentUrl}<button onclick={() => { if (failedDocumentUrl) openExternal(failedDocumentUrl).catch(report); }}>Open in Reader</button>{/if}<button aria-label="Dismiss error" onclick={() => { error = null; failedDocumentUrl = null; }}>Dismiss</button></div></div>{/if}
 {#if reading && connected}
   {@const account = generation}
   {@const id = reading.document.id}
@@ -186,15 +195,15 @@
     <Reader data={reading} target={readingTarget} requestStatus={opening || mutating || syncing ? status : ''} {settings} onback={back} onarchive={() => archive(id, account)} onchapter={(chapter, target = null) => open(id, chapter, target)} onhighlight={(text, offset, chapter) => highlight(id, text, offset, chapter, account)} onposition={(value) => position(id, value, account)} onsettings={changeSettings} onexternal={openExternal} onflush={(flush) => flushReading = flush} />
   {/key}
 {:else}
-  <header class="app-header"><a class="app-brand" href="#library" onclick={(event) => { event.preventDefault(); screen = 'library'; }}>Quiet Reader</a>
+  <header class="app-header"><a class="app-brand" href="#library" onclick={(event) => { event.preventDefault(); screen = 'library'; }}>NanoReader</a>
     {#if connected}<div class="app-actions"><button disabled={syncing} onclick={() => sync()}>{syncing ? 'Syncing…' : 'Sync'}</button><button aria-pressed={screen === 'settings'} onclick={() => screen = screen === 'settings' ? 'library' : 'settings'}>Settings</button></div>{/if}
   </header>
-  {#if !ready}<main class="onboarding"><p class="eyebrow">QUIET READER</p><h1>Opening your library…</h1></main>
+  {#if !ready}<main class="onboarding"><p class="eyebrow">NANOREADER</p><h1>Opening your library…</h1></main>
   {:else if !connected}<main class="onboarding"><p class="eyebrow">MAKE ROOM FOR READING</p><h1>Your library.<br />A quieter place to read.</h1><p>Articles and books saved in Readwise Reader, with just the things you need to read them.</p>
     <form onsubmit={signIn}><label for="access-token">Readwise access token</label><input id="access-token" type="password" autocomplete="off" spellcheck="false" bind:value={token} disabled={authenticating} required /><button class="primary" type="submit" disabled={authenticating || !token.trim()}>{authenticating ? 'Connecting…' : 'Connect Readwise'}</button></form>
     <button class="text-link" onclick={() => openExternal('https://readwise.io/access_token').catch(report)}>Get your token from Readwise ↗</button><p class="setting-help">Stored in Windows Credential Manager and used only to connect to Readwise.</p>
   </main>
   {:else if screen === 'settings'}<SettingsPanel {settings} {config} {syncing} onsettings={changeSettings} onconfig={() => openConfig().catch(report)} onreload={reload} onrefresh={() => sync(true)} ondisconnect={signOut} onclose={() => screen = 'library'} />
   {:else}<Library {documents} views={config.views} {settings} bind:selected={libraryView} bind:search={librarySearch} bind:page={libraryPage} busy={syncing} onopen={open} onsettings={changeSettings} onconfig={() => openConfig().catch(report)} />{/if}
-  {#if connected}<footer class="app-footer"><span role="status">{status || (lastSynced ? `Synced ${new Date(lastSynced).toLocaleString()}` : 'Ready to sync')}</span>{#if config.config_error}<button class="config-warning" onclick={() => screen = 'settings'}>Views file needs attention</button>{/if}</footer>{/if}
+  {#if connected}<footer class="app-footer"><span role="status" aria-label="Library status">{status || (lastSynced ? `Synced ${new Date(lastSynced).toLocaleString()}` : 'Ready to sync')}</span>{#if config.config_error}<button class="config-warning" onclick={() => screen = 'settings'}>Views file needs attention</button>{/if}</footer>{/if}
 {/if}
