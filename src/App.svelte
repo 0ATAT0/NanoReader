@@ -5,6 +5,7 @@
   import Library from './lib/Library.svelte';
   import Reader from './lib/Reader.svelte';
   import SettingsPanel from './lib/Settings.svelte';
+  import { applyTheme } from './lib/theme';
   import { bootstrap, connect, disconnect, syncLibrary, readDocument, archiveDocument,
     createHighlight, savePosition, saveSettings, reloadViews, openConfig, openExternal, onSyncProgress } from './lib/bridge';
   import type { Bootstrap, Document, Highlight, Position, ReadingDocument, Settings, ViewsConfig } from './lib/types';
@@ -12,7 +13,9 @@
   let connected = $state(false);
   let ready = $state(false);
   let documents = $state<Document[]>([]);
-  let settings = $state<Settings>({ font_family: 'inter', font_size: 20, font_weight: 400, line_height: 1.8, paragraph_spacing: 1.5, text_brightness: 83, reading_width: 900, cover_size: 280, view: 'covers', sort: 'newest' });
+  let settings = $state<Settings>({ theme: 'black', font_family: 'inter', font_size: 20, font_weight: 400, line_height: 1.8, paragraph_spacing: 1.5, text_brightness: 83, reading_width: 900, cover_size: 280, view: 'covers', sort: 'newest' });
+  const theme = $derived(settings.theme);
+  $effect(() => applyTheme(theme));
   let config = $state<ViewsConfig>({ views: [], config_path: '', config_error: null });
   let lastSynced = $state<string | null>(null);
   let reading = $state<ReadingDocument | null>(null);
@@ -186,7 +189,7 @@
   onDestroy(() => { mounted = false; ++generation; clearTimeout(settingsTimer); clearTimeout(progressTimer); stopProgress?.(); stopClose?.(); });
 </script>
 
-<svelte:head><title>NanoReader</title><meta name="color-scheme" content="dark" /></svelte:head>
+<svelte:head><title>NanoReader</title><meta name="color-scheme" content={theme === 'light' ? 'light' : 'dark'} /></svelte:head>
 {#if error}<div class="app-notice notice error" role="alert"><span>{error}</span><div class="notice-actions">{#if failedDocumentUrl}<button onclick={() => { if (failedDocumentUrl) openExternal(failedDocumentUrl).catch(report); }}>Open in Reader</button>{/if}<button aria-label="Dismiss error" onclick={() => { error = null; failedDocumentUrl = null; }}>Dismiss</button></div></div>{/if}
 {#if reading && connected}
   {@const account = generation}

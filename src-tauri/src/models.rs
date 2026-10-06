@@ -79,6 +79,7 @@ pub struct ApiDocument {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Settings {
+    pub theme: String,
     pub font_size: u32,
     pub line_height: f64,
     pub reading_width: u32,
@@ -94,6 +95,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            theme: "black".into(),
             font_size: 20,
             line_height: 1.8,
             reading_width: 900,
@@ -109,15 +111,19 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub const MIN_COVER_SIZE: u32 = 140;
+    pub const MAX_COVER_SIZE: u32 = 360;
+
     pub fn validate(&self) -> Result<(), String> {
-        if !(16..=32).contains(&self.font_size)
+        if !["black", "dark", "light"].contains(&self.theme.as_str())
+            || !(16..=32).contains(&self.font_size)
             || !(1.4..=2.2).contains(&self.line_height)
             || !(600..=1400).contains(&self.reading_width)
             || !["inter", "georgia", "system"].contains(&self.font_family.as_str())
             || !(300..=700).contains(&self.font_weight)
             || !(0.5..=2.5).contains(&self.paragraph_spacing)
             || !(60..=100).contains(&self.text_brightness)
-            || !(180..=480).contains(&self.cover_size)
+            || !(Self::MIN_COVER_SIZE..=Self::MAX_COVER_SIZE).contains(&self.cover_size)
             || !["covers", "list"].contains(&self.view.as_str())
             || !["newest", "oldest", "shortest"].contains(&self.sort.as_str())
         {

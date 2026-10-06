@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { Bootstrap, CustomView, Document } from '../src/lib/types';
+import type { Bootstrap, CustomView, Document, Settings } from '../src/lib/types';
 import examples from '../views.example.json' with { type: 'json' };
 
 function document(id: string, values: Partial<Document> = {}): Document {
@@ -15,7 +15,7 @@ const documents = [document('streets', { title: 'Streets made for walking', imag
   document('book', { title: 'A Small Book of Observation', category: 'epub', reading_time: '240 mins', reading_progress: 0.8 }),
   document('tagged', { title: 'A tagged essay', tags: { keep: 'Keep' } })];
 
-const snapshot: Bootstrap = { connected: true, documents, settings: { font_size: 20, line_height: 1.8, reading_width: 900,
+const snapshot: Bootstrap = { connected: true, documents, settings: { theme: 'black', font_size: 20, line_height: 1.8, reading_width: 900,
   font_family: 'inter', font_weight: 400, paragraph_spacing: 1.5, text_brightness: 83, cover_size: 280, view: 'covers', sort: 'newest' },
   views: examples.views, config_path: 'C:\\LocalAppData\\io.quietreader.desktop\\views.json', config_error: null, last_synced: '2026-01-01T00:00:00Z' };
 
@@ -31,6 +31,12 @@ async function installBridge(page: Page, options: { count?: number; connected?: 
   if (options.views) initial.views = options.views;
   if (options.connected === false) { initial.connected = false; initial.documents = []; }
   if (options.count) initial.documents = Array.from({ length: options.count }, (_, i) => document(`item-${i}`, { title: `Article ${String(i).padStart(4, '0')}` }));
+  let savedSettings = structuredClone(initial.settings);
+  // This fixture stands in for the native owner, surviving a fresh webview.
+  await page.exposeFunction('nativeSettings', (next?: Settings) => {
+    if (next) savedSettings = structuredClone(next);
+    return structuredClone(savedSettings);
+  });
   await page.addInitScript(({ initial, html, options }) => {
     const win = window as any;
     win.isTauri = true;
@@ -54,11 +60,11 @@ async function installBridge(page: Page, options: { count?: number; connected?: 
           case 'plugin:event|listen': listeners.set(args.event, args.handler); return 1;
           case 'plugin:event|unlisten': return;
           case 'plugin:window|destroy': win.windowDestroyed = true; return;
-          case 'bootstrap': return structuredClone(library);
+          case 'bootstrap': library.settings = await win.nativeSettings(); return structuredClone(library);
           case 'connect': library = structuredClone(initial); library.connected = true; return structuredClone(library);
           case 'disconnect': library.connected = false; library.documents = []; return;
           case 'sync_library': return { documents: structuredClone(library.documents), last_synced: new Date().toISOString() };
-          case 'save_settings': library.settings = structuredClone(args.settings); return;
+          case 'save_settings': library.settings = await win.nativeSettings(args.settings); return;
           case 'reload_views': return { views: library.views, config_path: library.config_path, config_error: null };
           case 'open_config': case 'open_external': return;
           case 'read_document': {
@@ -122,6 +128,18 @@ test('zero-config browsing, copied views, metadata covers, search and list layou
   await expect(page.locator('.article-list')).toBeVisible();
 });
 
+test('library header keeps the Home title close to the app name on desktop and narrow windows', async ({ page }) => {
+  await installBridge(page); await page.goto('/');
+  for (const width of [1280, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    const brand = (await page.getByRole('link', { name: 'NanoReader', exact: true }).boundingBox())!;
+    const title = (await page.getByRole('heading', { name: 'Home', exact: true }).boundingBox())!;
+    expect(title.y - brand.y - brand.height).toBeLessThanOrEqual(32);
+    await expect(page.getByText('YOUR LIBRARY', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
 test('Home can be configured from an empty dashboard while Inbox remains available', async ({ page }) => {
   await installBridge(page, { views: [] }); await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
@@ -164,16 +182,17 @@ test('cover size changes the rendered grid and reading controls share saved pref
   await page.mouse.move(0, 0);
   await page.getByRole('slider', { name: 'Cover size' }).focus();
   await expect(coverControl.locator('output')).toHaveCSS('opacity', '1');
-  await page.getByRole('slider', { name: 'Cover size' }).fill('180');
+  await page.getByRole('slider', { name: 'Cover size' }).fill('140');
   await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
   const small = await page.locator('.article-cover').first().boundingBox();
-  await page.getByRole('slider', { name: 'Cover size' }).fill('480');
+  expect(await page.locator('.cover-fallback').evaluateAll(covers => covers.every(cover => cover.scrollHeight <= cover.clientHeight))).toBe(true);
+  await page.getByRole('slider', { name: 'Cover size' }).fill('360');
   await expect.poll(async () => (await page.locator('.article-cover').first().boundingBox())!.width).toBeGreaterThan(small!.width * 1.5);
   await expect(page.locator('.article-card')).toHaveCount(4);
   await page.getByRole('button', { name: 'List', exact: true }).click();
   await expect(page.getByRole('slider', { name: 'Cover size' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Covers', exact: true }).click();
-  await expect(page.getByRole('slider', { name: 'Cover size' })).toHaveValue('480');
+  await expect(page.getByRole('slider', { name: 'Cover size' })).toHaveValue('360');
   await page.getByRole('button', { name: /Streets made for walking/ }).click();
   await page.getByRole('button', { name: 'Text settings' }).click();
   await page.getByRole('combobox', { name: 'Typeface' }).selectOption('georgia');
@@ -198,7 +217,50 @@ test('cover size changes the rendered grid and reading controls share saved pref
   await page.evaluate(() => (window as any).testEmit('tauri://close-requested', null));
   await expect.poll(() => page.evaluate(() => (window as any).windowDestroyed)).toBe(true);
   const saved = await page.evaluate(() => (window as any).testCalls.filter((call: any) => call.command === 'save_settings').at(-1).args.settings);
-  expect(saved).toMatchObject({ cover_size: 480, font_family: 'georgia', font_weight: 700, paragraph_spacing: 0.9, text_brightness: 100 });
+  expect(saved).toMatchObject({ cover_size: 360, font_family: 'georgia', font_weight: 700, paragraph_spacing: 0.9, text_brightness: 100 });
+});
+
+test('themes persist through a fresh webview and keep preview, article and scrollbars readable', async ({ page }) => {
+  await installBridge(page); await page.goto('/');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+  for (const theme of ['dark', 'light', 'black'] as const) {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Theme' }).selectOption(theme);
+    const light = theme === 'light';
+    await expect(page.locator('html')).toHaveCSS('color-scheme', light ? 'light' : 'dark');
+    const colours = await page.evaluate(() => ({
+      ground: getComputedStyle(document.body).backgroundColor,
+      heading: getComputedStyle(document.querySelector('h1')!).color,
+      scrollbar: getComputedStyle(document.documentElement).scrollbarColor,
+    }));
+    const channels = (colour: string) => colour.match(/\d+/g)!.map(Number);
+    const ground = channels(colours.ground);
+    const heading = channels(colours.heading);
+    expect(ground[0]).toBe(ground[1]); expect(ground[1]).toBe(ground[2]);
+    if (light) { expect(ground[0]).toBeGreaterThanOrEqual(240); expect(heading[0]).toBeLessThan(40); }
+    else { expect(ground[0]).toBeLessThan(40); expect(heading[0]).toBeGreaterThan(230); }
+    if (theme === 'dark') expect(ground[0]).toBeGreaterThan(0);
+    expect(colours.scrollbar).not.toBe('auto');
+    expect(colours.scrollbar).toContain(colours.ground);
+    const ink = light ? 'rgb(43, 43, 43)' : 'rgb(212, 212, 212)';
+    await expect(page.locator('.reading-sample')).toHaveCSS('color', ink);
+    await expect.poll(() => page.evaluate(() => (window as any).testCalls.filter((call: any) => call.command === 'save_settings').at(-1)?.args.settings.theme)).toBe(theme);
+    await page.reload();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Theme' })).toHaveValue(theme);
+    await expect(page.locator('body')).toHaveCSS('background-color', colours.ground);
+    await page.getByRole('button', { name: 'Back to library' }).click();
+    await page.getByRole('button', { name: /Streets made for walking/ }).click();
+    await expect(page.locator('.article-body')).toHaveCSS('color', ink);
+    await page.getByRole('button', { name: 'Text settings' }).click();
+    const panelScrollbar = await page.locator('.reading-controls').evaluate(element => getComputedStyle(element).scrollbarColor);
+    expect(panelScrollbar).not.toBe('auto');
+    expect(panelScrollbar.split(')')[0]).toBe(colours.scrollbar.split(')')[0]);
+    await page.getByRole('slider', { name: 'Text brightness' }).fill('100');
+    await expect(page.locator('.article-body')).toHaveCSS('color', light ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
+    await page.getByRole('slider', { name: 'Text brightness' }).fill('83');
+    await page.getByRole('button', { name: /Library/ }).first().click();
+  }
 });
 
 test('reduced motion disables screen and interaction animations', async ({ page }) => {
@@ -226,8 +288,10 @@ test('cover and window resizing ease cards into position and stop immediately fo
   await installBridge(page, { count: 1000 }); await page.goto('/');
   await page.getByRole('button', { name: 'Inbox', exact: true }).click();
   await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
+  await page.getByRole('slider', { name: 'Cover size' }).fill('140');
+  await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
   const movingCards = () => page.locator('.article-card').evaluateAll(cards => cards.filter(card => card.getAnimations().some(animation => animation.playState === 'running')).length);
-  await page.getByRole('slider', { name: 'Cover size' }).fill('480');
+  await page.getByRole('slider', { name: 'Cover size' }).fill('360');
   await expect.poll(movingCards, { timeout: 1000 }).toBeGreaterThan(0);
   await expect.poll(movingCards).toBe(0);
   const wide = (await page.locator('.article-cover').first().boundingBox())!.width;
@@ -236,7 +300,7 @@ test('cover and window resizing ease cards into position and stop immediately fo
   await expect.poll(movingCards).toBe(0);
   expect((await page.locator('.article-cover').first().boundingBox())!.width).toBeGreaterThan(wide);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.getByRole('slider', { name: 'Cover size' }).fill('180');
+  await page.getByRole('slider', { name: 'Cover size' }).fill('140');
   await expect(page.locator('.article-card')).toHaveCount(60);
   expect(await movingCards()).toBe(0);
 });
@@ -353,7 +417,7 @@ test('VC-QR-6: a pending old-account read cannot appear after disconnect', async
   expect(await page.evaluate(() => Object.values(localStorage).join(''))).not.toContain('token');
 });
 
-test('visual acceptance: black library and reading screens have no horizontal overflow', async ({ page }, testInfo) => {
+test('visual acceptance: themed library and reading screens have no horizontal overflow', async ({ page }, testInfo) => {
   const capture = async (name: string) => {
     await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
     await page.screenshot({ path: testInfo.outputPath(name), fullPage: false });
@@ -362,7 +426,21 @@ test('visual acceptance: black library and reading screens have no horizontal ov
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
-  await capture('home.png');
+  await capture('theme-black-v022.png');
+  for (const theme of ['dark', 'light'] as const) {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Theme' }).selectOption(theme);
+    await page.getByRole('button', { name: 'Back to library' }).click();
+    await page.mouse.move(0, 0);
+    await capture(`theme-${theme}-v022.png`);
+  }
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('black');
+  await capture('settings-v022.png');
+  await page.getByRole('button', { name: 'Back to library' }).click();
+  await page.getByRole('slider', { name: 'Cover size' }).fill('140');
+  await page.mouse.move(0, 0);
+  await capture('small-covers-desktop-v022.png');
   await page.locator('.cover-size-control').hover();
   await capture('cover-control.png');
   await page.getByRole('button', { name: 'Quick Reads', exact: true }).click();
@@ -377,12 +455,12 @@ test('visual acceptance: black library and reading screens have no horizontal ov
   await expect(page.getByRole('button', { name: 'Text settings' })).toBeFocused();
   await page.getByRole('button', { name: '← Library' }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await capture('settings.png');
   await page.setViewportSize({ width: 720, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Back to library' }).click();
   await page.getByRole('button', { name: 'Home', exact: true }).click();
-  await page.getByRole('slider', { name: 'Cover size' }).fill('480');
-  await capture('home-narrow.png');
+  await page.getByRole('slider', { name: 'Cover size' }).fill('140');
+  await page.mouse.move(0, 0);
+  await capture('small-covers-720-v022.png');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

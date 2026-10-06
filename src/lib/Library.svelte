@@ -74,7 +74,7 @@
 {/snippet}
 
 <main class="library-screen" style:--cover-size={`${settings.cover_size}px`}>
-  <div class="library-heading"><div><p class="eyebrow">YOUR LIBRARY</p><h1>{title}</h1></div><span class="library-count">{count} {count === 1 ? 'item' : 'items'}</span></div>
+  <div class="library-heading"><h1>{title}</h1><span class="library-count">{count} {count === 1 ? 'item' : 'items'}</span></div>
   <nav class="view-tabs" aria-label="Library views">
     {#each tabs as tab (tab.key)}
       <button class:active={selected === tab.key} aria-current={selected === tab.key ? 'page' : undefined} onclick={() => { selected = tab.key; page = 1; }}>{tab.name}</button>
@@ -84,7 +84,7 @@
     <label class="search-field"><span class="sr-only">Search title, author or source</span><input type="search" placeholder="Search your library" bind:value={search} oninput={() => page = 1} /></label>
     <label class="sort-field"><span class="sr-only">Sort articles</span><select value={settings.sort} onchange={(event) => { onsettings({ ...settings, sort: event.currentTarget.value as Settings['sort'] }); page = 1; }}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="shortest">Shortest first</option></select></label>
     <div class="layout-toggle" aria-label="Library layout"><button aria-pressed={settings.view === 'covers'} onclick={() => onsettings({ ...settings, view: 'covers' })}>Covers</button><button aria-pressed={settings.view === 'list'} onclick={() => onsettings({ ...settings, view: 'list' })}>List</button></div>
-    {#if settings.view === 'covers'}<label class="cover-size-control"><span>Cover size</span><span class="cover-size-slider"><span class="cover-slider-track" aria-hidden="true"></span><input aria-label="Cover size" type="range" min="180" max="480" step="20" value={settings.cover_size} oninput={(event) => onsettings({ ...settings, cover_size: Number(event.currentTarget.value) })} /></span><output>{settings.cover_size}px</output></label>{/if}
+    {#if settings.view === 'covers'}<label class="cover-size-control"><span>Cover size</span><span class="cover-size-slider"><span class="cover-slider-track" aria-hidden="true"></span><input aria-label="Cover size" type="range" min="140" max="360" step="20" value={settings.cover_size} oninput={(event) => onsettings({ ...settings, cover_size: Number(event.currentTarget.value) })} /></span><output>{settings.cover_size}px</output></label>{/if}
   </div>
   {#key `${selected}:${settings.view}:${currentPage}`}
   <div class="library-results" use:resizeGrid={settings.view === 'covers'}>

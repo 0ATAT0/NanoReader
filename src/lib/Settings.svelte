@@ -9,6 +9,7 @@
 
 <main class="settings-screen">
   <header class="settings-heading"><div><p class="eyebrow">NANOREADER</p><h1>Settings</h1></div><button onclick={onclose}>Back to library</button></header>
+  <section class="settings-section"><h2>Appearance</h2><div class="settings-fields"><label class="setting-field">Theme<select value={settings.theme} onchange={(event) => onsettings({ ...settings, theme: event.currentTarget.value as Settings['theme'] })}><option value="black">All Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label></div></section>
   <section class="settings-section"><h2>Reading</h2><ReadingControls {settings} {onsettings} /><p class="setting-help">Desktop reading positions are saved here; Reader's mobile progress is available as an approximate starting point.</p></section>
   <section class="settings-section"><h2>Library</h2><div class="settings-fields">
     <label class="setting-field">Layout<select value={settings.view} onchange={(event) => onsettings({ ...settings, view: event.currentTarget.value as Settings['view'] })}><option value="covers">Covers</option><option value="list">List</option></select></label>

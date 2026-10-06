@@ -2,7 +2,7 @@
 
 A small Windows desktop app for reading articles and EPUBs saved in Readwise Reader.
 
-Pure-black surfaces, cover and list browsing, adjustable typography, local reading positions, highlighting and archive. Built with Rust, Tauri and Svelte. Readwise remains your library; NanoReader has no server, analytics or AI service.
+All Black, Dark and Light themes, cover and list browsing, adjustable typography, local reading positions, highlighting and archive. Built with Rust, Tauri and Svelte. Readwise remains your library; NanoReader has no server, analytics or AI service.
 
 ## Setup
 
@@ -18,7 +18,9 @@ Sync imports metadata first and fetches article bodies or books when opened. Rea
 
 ## Reading and API limits
 
-Reading controls adjust font, size, weight, line spacing, paragraph spacing, text brightness and width, with a live text preview below the controls. The cover-size slider sits beside the library layout controls; its track and value appear on hover or keyboard focus. Cover cards ease into their new layout as the slider or window size changes. Preferences persist between launches. Transitions respect the system's reduced-motion setting. On Windows 11, the native title bar is pure black; older Windows versions retain the system's dark title bar.
+Settings offers All Black for OLED, charcoal Dark and Light themes. Scrollbars follow the selected theme; Windows 11 also matches the native title bar, while older Windows uses the corresponding system title bar.
+
+Reading controls adjust font, size, weight, line spacing, paragraph spacing, text brightness and width, with a live text preview below the controls. The cover-size slider ranges from 140 to 360px; its track and value appear on hover or keyboard focus. Cover cards ease into their new layout as the slider or window size changes. Preferences persist between launches. Transitions respect the system's reduced-motion setting.
 
 Article HTML is sanitized; scripts, embedded frames and publisher styles are removed. Ordinary links open your browser. Article and cover images contact their source hosts when displayed.
 

@@ -358,12 +358,93 @@ fn save_position(id: String, position: Position, state: State<AppState>) -> Resu
 }
 
 #[tauri::command]
-fn save_settings(settings: Settings, state: State<AppState>) -> Result<(), String> {
-    state
-        .store
-        .lock()
-        .map_err(|_| "Library storage is unavailable.")?
-        .save_settings(&settings)
+fn save_settings(
+    settings: Settings,
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let theme_changed = {
+        let store = state
+            .store
+            .lock()
+            .map_err(|_| "Library storage is unavailable.")?;
+        let changed = store.settings()?.theme != settings.theme;
+        store.save_settings(&settings)?;
+        changed
+    };
+    if theme_changed {
+        let window = app
+            .get_webview_window("main")
+            .ok_or("The reader window is unavailable.")?;
+        apply_window_palette(&window, &window_palette(&settings.theme)?, &settings.theme)?;
+    }
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct WindowPalette {
+    ground: tauri::webview::Color,
+    heading: tauri::webview::Color,
+}
+
+fn window_palette(theme: &str) -> Result<WindowPalette, String> {
+    serde_json::from_str::<std::collections::HashMap<String, WindowPalette>>(include_str!(
+        "../../src/lib/themes.json"
+    ))
+    .map_err(|_| "The bundled theme palette is invalid.".to_string())?
+    .remove(theme)
+    .ok_or_else(|| "The selected theme is unavailable.".into())
+}
+
+fn window_scheme(theme: &str) -> tauri::Theme {
+    if theme == "light" {
+        tauri::Theme::Light
+    } else {
+        tauri::Theme::Dark
+    }
+}
+
+fn apply_window_palette(
+    window: &tauri::WebviewWindow,
+    palette: &WindowPalette,
+    theme: &str,
+) -> Result<(), String> {
+    window
+        .set_theme(Some(window_scheme(theme)))
+        .map_err(|_| "Could not apply the native window theme.".to_string())?;
+    window
+        .set_background_color(Some(palette.ground))
+        .map_err(|_| "Could not apply the window background.".to_string())?;
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+        };
+        let hwnd = window
+            .hwnd()
+            .map_err(|_| "The reader window is unavailable.")?
+            .0;
+        let colorref = |color: tauri::webview::Color| {
+            u32::from(color.0) | (u32::from(color.1) << 8) | (u32::from(color.2) << 16)
+        };
+        for (attribute, color) in [
+            (DWMWA_CAPTION_COLOR, colorref(palette.ground)),
+            (DWMWA_BORDER_COLOR, colorref(palette.ground)),
+            (DWMWA_TEXT_COLOR, colorref(palette.heading)),
+        ] {
+            // Windows 11 supports explicit caption colours; older systems retain the native scheme.
+            // SAFETY: the live window handle and COLORREF pointer are valid for this synchronous call.
+            unsafe {
+                DwmSetWindowAttribute(
+                    hwnd,
+                    attribute as u32,
+                    std::ptr::from_ref(&color).cast(),
+                    std::mem::size_of::<u32>() as u32,
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -399,9 +480,12 @@ pub fn run() {
                 Err(keyring::Error::NoEntry) => None,
                 Err(_) => return Err("Cannot read Windows Credential Manager.".into()),
             };
+            let store = Store::open(&data_dir.join("library.db"))?;
+            let settings = store.settings()?;
+            let palette = window_palette(&settings.theme)?;
             app.manage(AppState {
                 account: Mutex::new(Account { generation: 0, api }),
-                store: Mutex::new(Store::open(&data_dir.join("library.db"))?),
+                store: Mutex::new(store),
                 sync_lock: tokio::sync::Mutex::new(()),
                 data_dir,
             });
@@ -413,8 +497,9 @@ pub fn run() {
             .title("NanoReader")
             .inner_size(1280.0, 880.0)
             .min_inner_size(720.0, 540.0)
-            .theme(Some(tauri::Theme::Dark))
-            .background_color(tauri::webview::Color(0, 0, 0, 255))
+            .theme(Some(window_scheme(&settings.theme)))
+            .background_color(palette.ground)
+            .visible(false)
             .on_navigation(|url| {
                 matches!(
                     (url.scheme(), url.host_str()),
@@ -425,30 +510,8 @@ pub fn run() {
             })
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .build()?;
-            #[cfg(windows)]
-            {
-                use windows_sys::Win32::Graphics::Dwm::{
-                    DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR,
-                    DWMWA_TEXT_COLOR,
-                };
-                let hwnd = window.hwnd()?.0;
-                for (attribute, color) in [
-                    (DWMWA_CAPTION_COLOR, 0_u32),
-                    (DWMWA_BORDER_COLOR, 0_u32),
-                    (DWMWA_TEXT_COLOR, 0x00f2f2f2_u32),
-                ] {
-                    // Windows 11 supports explicit caption colours; older systems keep the dark native theme.
-                    // SAFETY: the live window handle and COLORREF pointer are valid for this synchronous call.
-                    unsafe {
-                        DwmSetWindowAttribute(
-                            hwnd,
-                            attribute as u32,
-                            std::ptr::from_ref(&color).cast(),
-                            std::mem::size_of::<u32>() as u32,
-                        );
-                    }
-                }
-            }
+            apply_window_palette(&window, &palette, &settings.theme)?;
+            window.show()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

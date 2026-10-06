@@ -402,10 +402,14 @@ impl Store {
             )
             .optional()
             .map_err(storage_error)?;
-        let settings: Settings = match data {
+        let mut settings: Settings = match data {
             Some(data) => parse(&data)?,
             None => Settings::default(),
         };
+        // Older releases permitted larger covers; migrating reads must not block startup.
+        settings.cover_size = settings
+            .cover_size
+            .clamp(Settings::MIN_COVER_SIZE, Settings::MAX_COVER_SIZE);
         settings.validate()?;
         Ok(settings)
     }
@@ -600,8 +604,22 @@ mod tests {
             assert_eq!(upgraded.font_family, "inter");
             assert_eq!(upgraded.cover_size, 280);
             assert_eq!(upgraded.text_brightness, 83);
+            assert_eq!(upgraded.theme, "black");
+            // A saved 0.2 cover size must remain loadable after the slider range shrinks.
+            for (saved, expected) in [(420, 360), (480, 360), (180, 180), (100, 140)] {
+                store.connection.execute(
+                    "UPDATE preferences SET value = ?1 WHERE key = 'settings'",
+                    [serde_json::json!({"font_size":26,"line_height":1.6,"reading_width":1100,
+                        "cover_size":saved,"view":"list","sort":"oldest"}).to_string()],
+                ).unwrap();
+                let migrated = store.settings().unwrap();
+                assert_eq!(migrated.cover_size, expected);
+                assert_eq!(migrated.font_size, 26);
+                assert_eq!(migrated.theme, "black");
+            }
         }
         let settings = Settings {
+            theme: "light".into(),
             font_size: 24,
             line_height: 1.6,
             reading_width: 1200,
@@ -609,7 +627,7 @@ mod tests {
             font_weight: 500,
             paragraph_spacing: 1.2,
             text_brightness: 90,
-            cover_size: 420,
+            cover_size: 320,
             view: "list".into(),
             sort: "oldest".into(),
         };
@@ -659,9 +677,34 @@ mod tests {
                     cover_size: 100,
                     ..settings.clone()
                 },
+                Settings {
+                    cover_size: 361,
+                    ..settings.clone()
+                },
+                Settings {
+                    theme: "sepia".into(),
+                    ..settings.clone()
+                },
             ] {
                 assert!(store.save_settings(&invalid).is_err());
             }
+            for theme in ["black", "dark", "light"] {
+                let themed = Settings {
+                    theme: theme.into(),
+                    ..settings.clone()
+                };
+                store.save_settings(&themed).unwrap();
+                assert_eq!(store.settings().unwrap().theme, theme);
+            }
+            for cover_size in [140, 360] {
+                let bounded = Settings {
+                    cover_size,
+                    ..settings.clone()
+                };
+                store.save_settings(&bounded).unwrap();
+                assert_eq!(store.settings().unwrap().cover_size, cover_size);
+            }
+            store.save_settings(&settings).unwrap();
         }
         let mut store = Store::open(&path).unwrap();
         assert_eq!(store.settings().unwrap().font_size, 24);
@@ -670,7 +713,8 @@ mod tests {
         assert_eq!(restored.font_weight, 500);
         assert_eq!(restored.paragraph_spacing, 1.2);
         assert_eq!(restored.text_brightness, 90);
-        assert_eq!(restored.cover_size, 420);
+        assert_eq!(restored.cover_size, 320);
+        assert_eq!(restored.theme, "light");
         assert_eq!(store.position("private-a").unwrap().unwrap().chapter, 3);
         assert_eq!(
             store.position("private-a").unwrap().unwrap().anchor,
@@ -687,6 +731,7 @@ mod tests {
         assert!(store.position("private-a").unwrap().is_none());
         assert!(store.highlights("private-a").unwrap().is_empty());
         assert_eq!(store.settings().unwrap().reading_width, 1200);
+        assert_eq!(store.settings().unwrap().theme, "light");
         store
             .apply_sync(&[article("other-account")], LATER_SYNC, true)
             .unwrap();

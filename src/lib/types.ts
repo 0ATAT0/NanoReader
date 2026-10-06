@@ -19,6 +19,7 @@ export interface Document {
 }
 
 export interface Settings {
+  theme: 'black' | 'dark' | 'light';
   font_family: 'inter' | 'georgia' | 'system';
   font_size: number;
   font_weight: number;
