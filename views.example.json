@@ -1,0 +1,12 @@
+{
+  "views": [
+    {
+      "name": "Quick Reads",
+      "query": "(minutes__lt:10 OR minutes:10) AND (in:inbox OR in:later) AND category__not:video AND category__not:email AND has__not:tags"
+    },
+    {
+      "name": "Long Reads",
+      "query": "minutes__gt:10 AND (in:inbox OR in:later) AND category__not:epub AND category__not:email AND category__not:video AND has__not:tags"
+    }
+  ]
+}

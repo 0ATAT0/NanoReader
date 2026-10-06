@@ -1,0 +1,47 @@
+[package]
+name = "quiet-reader"
+version = "0.1.0"
+description = "A focused Windows reader for Readwise Reader"
+license = "MIT"
+edition = "2021"
+rust-version = "1.90"
+
+[lib]
+name = "quiet_reader"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+tokio = { version = "1", features = ["sync", "time"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+keyring = { version = "3.6.3", features = ["windows-native"] }
+open = "5"
+epub = "2.1"
+base64 = "0.22"
+url = "2"
+quick-xml = "0.38"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false

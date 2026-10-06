@@ -1,0 +1,3 @@
+# Integration notes
+
+Reader's metadata and content requests share one LIST allowance; a separate content client would exceed it during browsing. Preserve successful local mutations against in-flight sync responses, and advance the incremental cursor only after every page completes. Require the final cursor field to be present even when null. Keep credential replacement behind successful old-account cache clearing so a storage failure cannot pair a new token with old content. Selected-text offsets are local; Reader's highlight creation matches text and cannot distinguish repeated occurrences. Test real EPUB resources and Windows close handling alongside browser UI fixtures.
