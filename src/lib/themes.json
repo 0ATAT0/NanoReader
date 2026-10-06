@@ -11,7 +11,7 @@
     "danger": "#ffaaaa",
     "highlight": "#4b4128",
     "highlight-ink": "#faf2dc",
-    "scrollbar-thumb": "#606060"
+    "scrollbar-thumb": "#303030"
   },
   "dark": {
     "ground": "#171717",
